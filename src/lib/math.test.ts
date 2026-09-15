@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { GRADE_BANDS, bandAllowsNegative, makeQuestion, type GradeBand } from "@/lib/math";
+import {
+  GRADE_BANDS,
+  bandAllowsNegative,
+  makeQuestion,
+  makeQuestionWithKind,
+  pickKindMatchingTier,
+  tierOf,
+  type GradeBand,
+  type QuestionKind,
+} from "@/lib/math";
 
 const SAMPLE = 80;
 
@@ -103,5 +112,61 @@ describe("makeQuestion 10-12", () => {
 describe("GRADE_BANDS", () => {
   it("lists all four bands", () => {
     expect(GRADE_BANDS.map((g) => g.id)).toEqual(["4-5", "6-7", "8-9", "10-12"]);
+  });
+});
+
+describe("forced kind shapes", () => {
+  it("plain-add / plain-mul produce matching operators", () => {
+    const add = makeQuestion("4-5", "plain-add");
+    expect(add.prompt).toContain(" + ");
+    const mul = makeQuestion("6-7", "plain-mul");
+    expect(mul.prompt).toContain(" × ");
+  });
+
+  it("eval-one and solve-one use variables; eval-two / solve-two favor parentheses", () => {
+    const evalOne = makeQuestion("8-9", "eval-one");
+    expect(evalOne.prompt).toMatch(/[xy]/);
+    expect(evalOne.prompt).toContain(",");
+    const solveOne = makeQuestion("8-9", "solve-one");
+    expect(solveOne.prompt).toMatch(/[xy]/);
+    expect(solveOne.prompt).toContain("=");
+    expect(solveOne.prompt).not.toContain(",");
+
+    const evalTwo = makeQuestion("10-12", "eval-two");
+    expect(evalTwo.prompt).toMatch(/[xy]/);
+    expect(evalTwo.prompt).toContain("(");
+    const solveTwo = makeQuestion("10-12", "solve-two");
+    expect(solveTwo.prompt).toMatch(/[xy]/);
+  });
+});
+
+describe("pickKindMatchingTier", () => {
+  it("stays in the peer tier for arithmetic bands", () => {
+    for (let i = 0; i < 40; i++) {
+      const addPeer: QuestionKind = "plain-add";
+      const matched = pickKindMatchingTier("4-5", addPeer);
+      expect(tierOf(matched, "4-5")).toBe("add-sub");
+
+      const mulPeer: QuestionKind = "plain-mul";
+      const matchedMul = pickKindMatchingTier("6-7", mulPeer);
+      expect(tierOf(matchedMul, "6-7")).toBe("mul-div");
+    }
+  });
+
+  it("stays in the peer tier for algebra bands", () => {
+    for (let i = 0; i < 40; i++) {
+      expect(tierOf(pickKindMatchingTier("8-9", "eval-one"), "8-9")).toBe("eval");
+      expect(tierOf(pickKindMatchingTier("8-9", "plain-sub"), "8-9")).toBe("plain");
+      expect(tierOf(pickKindMatchingTier("10-12", "solve-two"), "10-12")).toBe("solve");
+      expect(tierOf(pickKindMatchingTier("10-12", "plain-div"), "10-12")).toBe("plain");
+    }
+  });
+});
+
+describe("makeQuestionWithKind", () => {
+  it("returns the kind used to build the question", () => {
+    const made = makeQuestionWithKind("8-9", "solve-one");
+    expect(made.kind).toBe("solve-one");
+    expect(made.question.prompt).toMatch(/[xy]/);
   });
 });

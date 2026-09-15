@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useReducer, useRef } from "react";
-import { GraduationCap, RotateCcw, Trophy } from "lucide-react";
+import { Github, GraduationCap, RotateCcw, Trophy } from "lucide-react";
 import { GRADE_BANDS, bandAllowsNegative, type GradeBand } from "@/lib/math";
 import {
   canChangeGrade,
@@ -15,9 +15,12 @@ import { fetchPlayableUser } from "@/lib/auth";
 import { signInHref } from "@/lib/host-urls";
 import { useHostRoom } from "@/lib/use-game-room";
 import { AccountMenu } from "@/components/game/AccountMenu";
+import { HoverTip } from "@/components/game/HoverTip";
 import { PlayerPanel } from "@/components/game/PlayerPanel";
 import { Rope } from "@/components/game/Rope";
 import { SchoolBackground } from "@/components/game/SchoolBackground";
+
+const GITHUB_REPO_URL = "https://github.com/sokna492-km/krumath-tugofwar";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
@@ -135,6 +138,17 @@ function Index() {
               <RotateCcw className="size-4" />
               {km.newMatch}
             </button>
+            <HoverTip label="GitHub" side="bottom">
+              <a
+                href={GITHUB_REPO_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="View source on GitHub"
+                className="inline-flex size-[38px] items-center justify-center rounded-full bg-secondary text-secondary-foreground transition-transform hover:scale-105"
+              >
+                <Github className="size-4" strokeWidth={2.25} />
+              </a>
+            </HoverTip>
             <AccountMenu user={user} />
           </div>
         </header>

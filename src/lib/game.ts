@@ -1,10 +1,18 @@
 import { WIN_PULLS } from "@/lib/constants";
-import { makeQuestion, type GradeBand, type Question } from "@/lib/math";
+import {
+  makeQuestionWithKind,
+  pickKind,
+  pickKindMatchingTier,
+  type GradeBand,
+  type Question,
+  type QuestionKind,
+} from "@/lib/math";
 
 export type Side = "blue" | "red";
 
 export type SideState = {
   question: Question;
+  kind: QuestionKind;
   input: string;
   score: number;
   shaking: boolean;
@@ -30,24 +38,46 @@ export type GameAction =
   | { type: "playAgain" }
   | { type: "resetAll" };
 
-const freshSide = (band: GradeBand, score = 0): SideState => ({
-  question: makeQuestion(band),
-  input: "",
-  score,
-  shaking: false,
-});
+const freshSide = (band: GradeBand, score = 0, kind?: QuestionKind): SideState => {
+  const made = makeQuestionWithKind(band, kind);
+  return {
+    question: made.question,
+    kind: made.kind,
+    input: "",
+    score,
+    shaking: false,
+  };
+};
 
-export const createInitialState = (band: GradeBand = "4-5"): GameState => ({
-  band,
-  blue: freshSide(band),
-  red: freshSide(band),
-  position: 0,
-  pullKey: 0,
-  lastPuller: null,
-  winner: null,
-});
+/** Both sides get the same exact kind (dual refresh). */
+const freshPair = (
+  band: GradeBand,
+  blueScore = 0,
+  redScore = 0,
+): { blue: SideState; red: SideState } => {
+  const kind = pickKind(band);
+  return {
+    blue: freshSide(band, blueScore, kind),
+    red: freshSide(band, redScore, kind),
+  };
+};
+
+export const createInitialState = (band: GradeBand = "4-5"): GameState => {
+  const { blue, red } = freshPair(band);
+  return {
+    band,
+    blue,
+    red,
+    position: 0,
+    pullKey: 0,
+    lastPuller: null,
+    winner: null,
+  };
+};
 
 const getSide = (state: GameState, side: Side) => (side === "blue" ? state.blue : state.red);
+
+const otherSide = (side: Side): Side => (side === "blue" ? "red" : "blue");
 
 const withSide = (state: GameState, side: Side, next: SideState): GameState =>
   side === "blue" ? { ...state, blue: next } : { ...state, red: next };
@@ -101,6 +131,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
       const nextPos = action.side === "blue" ? state.position - 1 : state.position + 1;
       const won = Math.abs(nextPos) >= WIN_PULLS;
+      const peer = getSide(state, otherSide(action.side));
+      const nextKind = pickKindMatchingTier(state.band, peer.kind);
+      const made = makeQuestionWithKind(state.band, nextKind);
 
       return {
         ...state,
@@ -113,7 +146,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
               blue: {
                 ...s,
                 input: "",
-                question: makeQuestion(state.band),
+                question: made.question,
+                kind: made.kind,
                 score: won ? s.score + 1 : s.score,
               },
             }
@@ -121,7 +155,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
               red: {
                 ...s,
                 input: "",
-                question: makeQuestion(state.band),
+                question: made.question,
+                kind: made.kind,
                 score: won ? s.score + 1 : s.score,
               },
             }),
@@ -135,25 +170,28 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case "grade": {
       if (!canChangeGrade(state)) return state;
       if (action.band === state.band) return state;
+      const { blue, red } = freshPair(action.band, state.blue.score, state.red.score);
       return {
         ...state,
         band: action.band,
         position: 0,
         winner: null,
         lastPuller: null,
-        blue: freshSide(action.band, state.blue.score),
-        red: freshSide(action.band, state.red.score),
+        blue,
+        red,
       };
     }
-    case "playAgain":
+    case "playAgain": {
+      const { blue, red } = freshPair(state.band, state.blue.score, state.red.score);
       return {
         ...state,
         position: 0,
         winner: null,
         lastPuller: null,
-        blue: freshSide(state.band, state.blue.score),
-        red: freshSide(state.band, state.red.score),
+        blue,
+        red,
       };
+    }
     case "resetAll":
       return createInitialState(state.band);
     default:

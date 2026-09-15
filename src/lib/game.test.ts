@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { WIN_PULLS } from "@/lib/constants";
 import { createInitialState, gameReducer, type GameState, type SideState } from "@/lib/game";
-import type { Question } from "@/lib/math";
+import { tierOf, type Question, type QuestionKind } from "@/lib/math";
 
 const q = (answer: number): Question => ({
   prompt: `${answer} + 0`,
@@ -10,16 +10,17 @@ const q = (answer: number): Question => ({
 
 function withSides(
   state: GameState,
-  blue: { answer?: number; input?: string; score?: number },
-  red: { answer?: number; input?: string; score?: number },
+  blue: { answer?: number; input?: string; score?: number; kind?: QuestionKind },
+  red: { answer?: number; input?: string; score?: number; kind?: QuestionKind },
   extras: Partial<GameState> = {},
 ): GameState {
   const patch = (
     current: SideState,
-    next: { answer?: number; input?: string; score?: number },
+    next: { answer?: number; input?: string; score?: number; kind?: QuestionKind },
   ): SideState => ({
     ...current,
     question: next.answer !== undefined ? q(next.answer) : current.question,
+    kind: next.kind ?? current.kind,
     input: next.input ?? current.input,
     score: next.score ?? current.score,
   });
@@ -158,5 +159,29 @@ describe("gameReducer smoke", () => {
     state = gameReducer(state, { type: "clearShake", side: "blue" });
     state = gameReducer(state, { type: "digit", side: "blue", digit: "1" });
     expect(state.blue.input).toBe("1");
+  });
+
+  it("starts both sides on the same question kind", () => {
+    for (let i = 0; i < 20; i++) {
+      const state = createInitialState("8-9");
+      expect(state.blue.kind).toBe(state.red.kind);
+    }
+  });
+
+  it("after a correct submit, new question stays in the opponent tier", () => {
+    let state = withSides(
+      createInitialState("4-5"),
+      { answer: 7, input: "7", kind: "plain-add" },
+      { kind: "plain-mul" },
+    );
+    state = gameReducer(state, { type: "submit", side: "blue" });
+    expect(tierOf(state.blue.kind, "4-5")).toBe(tierOf(state.red.kind, "4-5"));
+    expect(tierOf(state.blue.kind, "4-5")).toBe("mul-div");
+  });
+
+  it("grade change dual-refreshes both sides to the same kind", () => {
+    let state = createInitialState("4-5");
+    state = gameReducer(state, { type: "grade", band: "10-12" });
+    expect(state.blue.kind).toBe(state.red.kind);
   });
 });

@@ -5,6 +5,18 @@ export type Question = {
 
 export type GradeBand = "4-5" | "6-7" | "8-9" | "10-12";
 
+export type QuestionKind =
+  | "plain-add"
+  | "plain-sub"
+  | "plain-mul"
+  | "plain-div"
+  | "eval-one"
+  | "solve-one"
+  | "eval-two"
+  | "solve-two";
+
+export type DifficultyTier = "add-sub" | "mul-div" | "plain" | "eval" | "solve";
+
 export const GRADE_BANDS: { id: GradeBand; label: string }[] = [
   { id: "4-5", label: "4–5" },
   { id: "6-7", label: "6–7" },
@@ -19,7 +31,13 @@ const MINUS = "−";
 const TIMES = "×";
 const DIV = "÷";
 
+const PLAIN_KINDS: QuestionKind[] = ["plain-add", "plain-sub", "plain-mul", "plain-div"];
+const ADD_SUB_KINDS: QuestionKind[] = ["plain-add", "plain-sub"];
+const MUL_DIV_KINDS: QuestionKind[] = ["plain-mul", "plain-div"];
+
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+const pick = <T>(items: readonly T[]): T => items[rand(0, items.length - 1)]!;
 
 /** Format a number for prompts; use Unicode minus for negatives. */
 const fmt = (n: number): string => (n < 0 ? `${MINUS}${Math.abs(n)}` : `${n}`);
@@ -60,20 +78,19 @@ function exactDivSigned(max: number): Question {
   };
 }
 
-function plainUnsigned(max: number): Question {
-  const kind = rand(0, 3);
-  if (kind === 0) {
+function plainUnsigned(max: number, kind: QuestionKind): Question {
+  if (kind === "plain-add") {
     const a = rand(0, max);
     const b = rand(0, max);
     return { prompt: `${a} + ${b}`, answer: a + b };
   }
-  if (kind === 1) {
+  if (kind === "plain-sub") {
     let a = rand(0, max);
     let b = rand(0, max);
     if (b > a) [a, b] = [b, a];
     return { prompt: `${a} ${MINUS} ${b}`, answer: a - b };
   }
-  if (kind === 2) {
+  if (kind === "plain-mul") {
     const a = rand(0, max);
     const b = rand(0, max);
     return { prompt: `${a} ${TIMES} ${b}`, answer: a * b };
@@ -81,19 +98,18 @@ function plainUnsigned(max: number): Question {
   return exactDivUnsigned(max);
 }
 
-function plainSigned(max: number): Question {
-  const kind = rand(0, 3);
-  if (kind === 0) {
+function plainSigned(max: number, kind: QuestionKind): Question {
+  if (kind === "plain-add") {
     const a = signedMag(max);
     const b = signedMag(max);
     return { prompt: `${fmt(a)} + ${fmtOp(b, true)}`, answer: a + b };
   }
-  if (kind === 1) {
+  if (kind === "plain-sub") {
     const a = signedMag(max);
     const b = signedMag(max);
     return { prompt: `${fmt(a)} ${MINUS} ${fmtOp(b, true)}`, answer: a - b };
   }
-  if (kind === 2) {
+  if (kind === "plain-mul") {
     const a = signedMag(max);
     const b = signedMag(max);
     return {
@@ -264,31 +280,92 @@ function solveTwoStep(max: number): Question {
   return { prompt: `${mid} = ${fmt(rhs)}`, answer: solution };
 }
 
-function make89(): Question {
-  const roll = rand(0, 3);
-  // ~half arithmetic (0,1), ~half variable (2 eval, 3 solve)
-  if (roll <= 1) return plainSigned(100);
-  if (roll === 2) return evaluateOneStep(100);
-  return solveOneStep(100);
+/** Difficulty tier for blue/red matching. Band-aware for plain ops. */
+export function tierOf(kind: QuestionKind, band: GradeBand): DifficultyTier {
+  if (kind === "eval-one" || kind === "eval-two") return "eval";
+  if (kind === "solve-one" || kind === "solve-two") return "solve";
+  if (band === "4-5" || band === "6-7") {
+    return kind === "plain-add" || kind === "plain-sub" ? "add-sub" : "mul-div";
+  }
+  return "plain";
 }
 
-function make1012(): Question {
-  const roll = rand(0, 4);
-  // smaller share of plain arithmetic (0), rest harder algebra
-  if (roll === 0) return plainSigned(100);
-  if (roll === 1 || roll === 2) return evaluateTwoStep(100);
-  return solveTwoStep(100);
-}
-
-export function makeQuestion(band: GradeBand = "4-5"): Question {
+function kindsForBand(band: GradeBand): QuestionKind[] {
   switch (band) {
     case "4-5":
-      return plainUnsigned(40);
     case "6-7":
-      return plainSigned(100);
+      return PLAIN_KINDS;
     case "8-9":
-      return make89();
+      return [...PLAIN_KINDS, "eval-one", "solve-one"];
     case "10-12":
-      return make1012();
+      return [...PLAIN_KINDS, "eval-two", "solve-two"];
   }
+}
+
+/** Pick a kind using the band's historical mix weights. */
+export function pickKind(band: GradeBand): QuestionKind {
+  switch (band) {
+    case "4-5":
+    case "6-7":
+      return pick(PLAIN_KINDS);
+    case "8-9": {
+      // 50% plain, 25% eval-one, 25% solve-one
+      const roll = rand(0, 3);
+      if (roll <= 1) return pick(PLAIN_KINDS);
+      if (roll === 2) return "eval-one";
+      return "solve-one";
+    }
+    case "10-12": {
+      // 20% plain, 40% eval-two, 40% solve-two
+      const roll = rand(0, 4);
+      if (roll === 0) return pick(PLAIN_KINDS);
+      if (roll === 1 || roll === 2) return "eval-two";
+      return "solve-two";
+    }
+  }
+}
+
+/** Pick a kind in the same difficulty tier as the peer (within this band). */
+export function pickKindMatchingTier(band: GradeBand, peerKind: QuestionKind): QuestionKind {
+  const tier = tierOf(peerKind, band);
+  if (band === "4-5" || band === "6-7") {
+    return pick(tier === "add-sub" ? ADD_SUB_KINDS : MUL_DIV_KINDS);
+  }
+  if (tier === "plain") return pick(PLAIN_KINDS);
+  if (tier === "eval") return band === "8-9" ? "eval-one" : "eval-two";
+  return band === "8-9" ? "solve-one" : "solve-two";
+}
+
+function buildQuestion(band: GradeBand, kind: QuestionKind): Question {
+  const allowed = kindsForBand(band);
+  const safeKind = allowed.includes(kind) ? kind : pickKind(band);
+
+  switch (band) {
+    case "4-5":
+      return plainUnsigned(40, safeKind);
+    case "6-7":
+      return plainSigned(100, safeKind);
+    case "8-9":
+      if (safeKind === "eval-one") return evaluateOneStep(100);
+      if (safeKind === "solve-one") return solveOneStep(100);
+      return plainSigned(100, safeKind);
+    case "10-12":
+      if (safeKind === "eval-two") return evaluateTwoStep(100);
+      if (safeKind === "solve-two") return solveTwoStep(100);
+      return plainSigned(100, safeKind);
+  }
+}
+
+export function makeQuestionWithKind(
+  band: GradeBand = "4-5",
+  kind?: QuestionKind,
+): { question: Question; kind: QuestionKind } {
+  const resolved = kind ?? pickKind(band);
+  const allowed = kindsForBand(band);
+  const safeKind = allowed.includes(resolved) ? resolved : pickKind(band);
+  return { question: buildQuestion(band, safeKind), kind: safeKind };
+}
+
+export function makeQuestion(band: GradeBand = "4-5", kind?: QuestionKind): Question {
+  return makeQuestionWithKind(band, kind).question;
 }
