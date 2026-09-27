@@ -2,6 +2,7 @@
 export const km = {
   newMatch: "ប្រកួតសាថ្មី",
   signIn: "ចូល",
+  authChecking: "កំពុងពិនិត្យគណនី KruMath…",
   homePage: "ទំព័រដើម",
   playAgain: "លេងម្តងទៀត",
   grade: "ថ្នាក់ទី",

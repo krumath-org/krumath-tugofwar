@@ -11,10 +11,12 @@ import {
 } from "@/lib/game";
 import { SHAKE_MS } from "@/lib/constants";
 import { km } from "@/lib/copy-km";
-import { fetchPlayableUser } from "@/lib/auth";
+import { fetchPlayableAuth } from "@/lib/auth";
 import { signInHref } from "@/lib/host-urls";
+import { usePlayableAuth } from "@/lib/playable-user";
 import { useHostRoom } from "@/lib/use-game-room";
 import { AccountMenu } from "@/components/game/AccountMenu";
+import { AuthGate } from "@/components/game/AuthGate";
 import { HoverTip } from "@/components/game/HoverTip";
 import { PlayerPanel } from "@/components/game/PlayerPanel";
 import { Rope } from "@/components/game/Rope";
@@ -24,11 +26,12 @@ const GITHUB_REPO_URL = "https://github.com/sokna492-km/krumath-tugofwar";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
-    const user = await fetchPlayableUser();
-    if (!import.meta.env.DEV && !user) {
+    const auth = await fetchPlayableAuth();
+    // Only the browser can prove a session is missing; the Worker sees cookies alone.
+    if (!import.meta.env.DEV && auth.status === "unauthenticated") {
       throw redirect({ href: signInHref() });
     }
-    return { user };
+    return { auth };
   },
   head: () => ({
     meta: [
@@ -49,13 +52,23 @@ export const Route = createFileRoute("/")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: Index,
+  component: GatedIndex,
 });
+
+function GatedIndex() {
+  const { auth } = Route.useRouteContext();
+
+  return (
+    <AuthGate initial={auth}>
+      <Index />
+    </AuthGate>
+  );
+}
 
 const CONFETTI = Array.from({ length: 24 }, (_, i) => i);
 
 function Index() {
-  const { user } = Route.useRouteContext();
+  const user = usePlayableAuth();
   const [localState, localDispatch] = useReducer(gameReducer, undefined, () =>
     createInitialState("4-5"),
   );
